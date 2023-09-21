@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recording and Playback</title>
+</head>
+<body>
+<button id="startRecordButton">Start Recording</button>
+<button id="stopRecordButton" disabled>Stop Recording</button>
+<button id="playButton" disabled>Play Audio</button>
+
+<script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+<script>
+    const socket = io();
+    let mediaRecorder;
+    const audioChunks = [];
+
+    const startRecordButton = document.getElementById('startRecordButton');
+    const stopRecordButton = document.getElementById('stopRecordButton');
+    const playButton = document.getElementById('playButton');
+
+    startRecordButton.addEventListener('click', startRecording);
+    stopRecordButton.addEventListener('click', stopRecording);
+
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    socket.emit('audio', reader.result.split(',')[1]);
+                    playButton.disabled = false;
+                };
+                reader.readAsDataURL(audioBlob);
+            };
+
+            mediaRecorder.start();
+            console.log('Recording started...');
+            startRecordButton.disabled = true;
+            stopRecordButton.disabled = false;
+
+            setTimeout(() => {
+                stopRecording();
+            }, 5000);  // Record for 5 seconds, adjust as needed
+        } catch (error) {
+            console.error('Error starting recording:', error);
+        }
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+            console.log('Recording stopped.');
+            startRecordButton.disabled = false;
+            stopRecordButton.disabled = true;
+        }
+    }
+
+    playButton.addEventListener('click', requestPlayback);
+
+    function requestPlayback() {
+        socket.emit('requestPlayback');
+    }
+
+    socket.on('playback', (audioData) => {
+        const audioBlob = new Blob([Buffer.from(audioData, 'base64')], { type: 'audio/wav' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+
+        const audio = new Audio(audioUrl);
+        audio.play();
+    });
+</script>
+</body>
+</html>
